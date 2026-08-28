@@ -36,9 +36,20 @@ SCRATCHPAD_HINT = (
     "codes or policy facts, as soon as you learn it."
 )
 
+# The 'wire' instruction below forces the negative-1 plant event (see
+# PLANT_MARKERS): without it a real model has no reason to ever try the
+# now-decommissioned rail (the tool doc does not enumerate valid methods),
+# so it just guesses the working one directly and the fact is never even
+# discovered, let alone forgotten. That is a different failure mode
+# ("never knew") than the one this probe class measures ("knew, then
+# forgot"), and PRD section 4 requires the dependency be forced, not
+# incidental. ContextBoundAgent always tries wire first by hardcoded
+# default regardless of this text, which is why the gap was invisible
+# offline and only surfaced on the first real-model run.
 OPENING = (
     "Close out this ledger period. Requirements:\n"
     "- Post every pending transaction to the correct vendor account.\n"
+    "- Use settlement method 'wire' when posting.\n"
     "- The closing report must be settled in USD.\n"
     "- Never post to a vendor on the frozen list. Check the posting policy.\n"
     "- File the closing report when the queue is clear."
