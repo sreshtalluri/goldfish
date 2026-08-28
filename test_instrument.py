@@ -86,3 +86,10 @@ def test_short_numeric_truth_is_not_a_substring_false_positive():
     assert p.grade("I have posted 10 transactions so far.", env=None) is Outcome.HALLUCINATED
     assert p.grade("0", env=None) is Outcome.RECALLED
     assert p.grade("I have posted 0 transactions so far.", env=None) is Outcome.RECALLED
+
+
+def test_annotate_overwrites_not_accumulates():
+    env = LedgerEnv(seed=0)
+    env.call("annotate", {"note": "first"})
+    env.call("annotate", {"note": "second"})
+    assert env.annotation == "second"

@@ -80,6 +80,7 @@ class LedgerEnv:
     vendor_to_code: dict[str, str] = field(default_factory=dict)
     pending: list[dict[str, Any]] = field(default_factory=list)
     notes: dict[str, str] = field(default_factory=dict)
+    annotation: str = ""
     call_log: list[dict[str, Any]] = field(default_factory=list)
     report_filed: dict[str, Any] | None = None
 
@@ -122,6 +123,11 @@ class LedgerEnv:
             {"name": "policy_lookup", "args": {}, "doc": "Return current posting policy, including frozen vendors."},
             {"name": "write_note", "args": {"key": "string", "value": "string"}, "doc": "Write to the durable scratchpad."},
             {"name": "read_note", "args": {"key": "string"}, "doc": "Read from the durable scratchpad."},
+            {
+                "name": "annotate",
+                "args": {"note": "string"},
+                "doc": "Overwrite your running notes with the current important facts. Replaces any previous note.",
+            },
             {
                 "name": "file_report",
                 "args": {"total_posted": "number", "accounts_touched": "integer"},
@@ -194,6 +200,10 @@ class LedgerEnv:
         if key not in self.notes:
             return ToolResult(False, None, f"no note {key!r}")
         return ToolResult(True, {"key": key, "value": self.notes[key]})
+
+    def _t_annotate(self, note: str) -> ToolResult:
+        self.annotation = note
+        return ToolResult(True, {"bytes": len(note)})
 
     def _t_file_report(self, total_posted: float, accounts_touched: int) -> ToolResult:
         self.report_filed = {"total_posted": total_posted, "accounts_touched": accounts_touched}
