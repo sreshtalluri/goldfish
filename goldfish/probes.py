@@ -83,6 +83,15 @@ class Probe:
     def distance(self) -> int | None:
         if self.planted_turn is None or self.asked_turn is None:
             return None
+        if self.asked_turn < self.planted_turn:
+            # Asked before the dependency existed (e.g. artifact_state asked
+            # before any transaction was posted, so "0" is trivially the
+            # current state rather than a fact recalled from earlier). This
+            # is not a short distance, it is not a valid test of recall at
+            # all, and treating it as a small positive distance would
+            # understate real decay. Surfaced by a real distance sweep where
+            # an early test_turn landed before a late-planting probe.
+            return None
         return self.asked_turn - self.planted_turn
 
     def grade(self, answer: str, env) -> Outcome:

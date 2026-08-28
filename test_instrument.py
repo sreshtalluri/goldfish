@@ -64,6 +64,18 @@ def test_file_report_rejects_non_numeric_total():
     assert env.report_filed is None
 
 
+def test_distance_is_none_when_asked_before_planted():
+    """A probe asked before its fact was ever planted isn't testing recall,
+    it's testing whether the trivial pre-dependency state happens to match
+    the question (e.g. "0 transactions posted" before any posting has
+    occurred). Surfaced in a real M2 distance sweep where an early test_turn
+    landed before a late-planting artifact_state probe."""
+    p = Probe(id="x", cls=ProbeClass.ARTIFACT, question="how many?", expected=lambda env: "0", test_turn=5)
+    p.asked_turn = 5
+    p.planted_turn = 12
+    assert p.distance is None
+
+
 def test_short_numeric_truth_is_not_a_substring_false_positive():
     """"0" is a literal substring of "10", "20", "104"... A real model answers
     count probes in free text ("I've posted 10 transactions so far"), so plain
