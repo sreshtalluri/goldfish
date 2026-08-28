@@ -93,3 +93,14 @@ def test_annotate_overwrites_not_accumulates():
     env.call("annotate", {"note": "first"})
     env.call("annotate", {"note": "second"})
     assert env.annotation == "second"
+
+
+def test_structured_notes_preserves_latest_annotation_under_pressure():
+    messages = [{"role": "user", "kind": "goal", "content": "x" * 500}]
+    messages.append({"role": "assistant", "kind": "action", "content": "annotate({'note': 'critical'})"})
+    messages.append({"role": "user", "kind": "observation", "tool": "annotate", "content": '{"bytes": 8}'})
+    for i in range(20):
+        messages.append({"role": "assistant", "kind": "action", "content": f"noise {i}" * 20})
+        messages.append({"role": "user", "kind": "observation", "tool": "list_pending", "content": "y" * 200})
+    out = strategies.StructuredNotes().reduce(messages, budget=50)
+    assert any(m.get("tool") == "annotate" for m in out)

@@ -173,6 +173,43 @@ class ExternalScratchpad:
         return [m for i, m in enumerate(messages) if i in pinned or id(m) in kept_rest_ids]
 
 
+@dataclass
+class StructuredNotes:
+    """The agent annotates as it goes via a single overwriting `annotate`
+    call; eviction keeps only the latest annotation plus the recent tail,
+    discarding the rest. Distinct from both Summarization (no LLM call, no
+    hallucination risk from re-deriving old content, and no per-compaction
+    cost) and ExternalScratchpad (one compact evolving note, not an
+    unbounded set of pinned raw messages) — this is the "Manus style"
+    variant PRD section 5 calls out: compaction preserves what the agent
+    chose to write down, not the raw transcript.
+    """
+
+    name: str = "structured_notes"
+    needs_tools: list[str] = field(default_factory=lambda: ["annotate"])
+
+    def reduce(self, messages: list[Message], budget: int) -> list[Message]:
+        if approx_tokens(messages) <= budget:
+            return messages
+        latest_note = None
+        for m in messages:
+            if m.get("kind") == "observation" and m.get("tool") == "annotate":
+                latest_note = m
+        note_list = [latest_note] if latest_note is not None else []
+        # The note is pinned, not just prepended: squeezing it through a
+        # second SlidingWindow pass over [note] + rest would treat it as the
+        # oldest, and therefore first-evicted, message under real pressure —
+        # exactly backwards for a strategy whose entire premise is that the
+        # note survives eviction. Budget for it first, then let SlidingWindow
+        # fill whatever remains with as much recent raw context as fits,
+        # rather than hard-capping to a fixed tail length regardless of how
+        # much budget is actually available.
+        note_tokens = approx_tokens(note_list)
+        rest = [m for m in messages if m is not latest_note]
+        kept_rest = SlidingWindow().reduce(rest, max(0, budget - note_tokens))
+        return note_list + kept_rest
+
+
 Summarizer = Callable[[list[Message]], str]
 
 
@@ -232,4 +269,5 @@ REGISTRY: dict[str, Callable[[], Strategy]] = {
     "retrieval": RetrievalOverTurns,
     "summarization": Summarization,
     "scratchpad": ExternalScratchpad,
+    "structured_notes": StructuredNotes,
 }
