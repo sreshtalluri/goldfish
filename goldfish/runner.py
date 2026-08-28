@@ -108,6 +108,18 @@ def run_episode(
     redundant = 0
 
     for turn in range(max_turns):
+        if history and history[-1]["role"] == "assistant":
+            # The previous turn ended on a direct answer (a probe response,
+            # or free text instead of a tool call) rather than a tool call
+            # whose observation naturally lands as a user turn. Real chat
+            # models refuse to continue a conversation that ends in the
+            # assistant role ("prefill"), so nudge it back into the loop.
+            # ContextBoundAgent never surfaces this, since it does not
+            # inspect role structure, which is why it stayed latent
+            # through M0 and only broke on the first live API call.
+            history.append({"role": "user", "kind": "resume", "content": "Continue with the task."})
+            transcript.append("Continue with the task.")
+
         blob = "\n".join(transcript)
         for p in probes:
             if p.planted_turn is None and PLANT_MARKERS[p.id](blob, env):
@@ -119,6 +131,7 @@ def run_episode(
             history.append({"role": "user", "kind": "probe", "content": p.question})
             transcript.append(p.question)
             history = strategy.reduce(history, budget)
+            assert history[-1]["role"] != "assistant", "probe turn must end on a user message"
             action = model.act(system, history, env.tool_schema())
             _accumulate(usage, action.usage)
             p.asked_turn = turn
@@ -130,6 +143,7 @@ def run_episode(
 
         history = strategy.reduce(history, budget)
         peak = max(peak, approx_tokens(history))
+        assert history[-1]["role"] != "assistant", "non-probe turn must end on a user message"
         action = model.act(system, history, env.tool_schema())
         _accumulate(usage, action.usage)
 
