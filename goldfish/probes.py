@@ -86,7 +86,7 @@ def default_probe_suite(test_turns: list[int] | None = None) -> list[Probe]:
     Test turns are staggered so a single episode yields several points on the
     forgetting curve rather than one.
     """
-    turns = test_turns or [14, 20, 26, 32, 38]
+    turns = test_turns or [14, 19, 24, 29, 34, 39]
     return [
         Probe(
             id="ident-1",
@@ -122,6 +122,13 @@ def default_probe_suite(test_turns: list[int] | None = None) -> list[Probe]:
             question="How many transactions have you successfully posted so far? A number only.",
             expected=lambda env: str(sum(1 for t in env.pending if t.get("posted"))),
             test_turn=turns[4],
+        ),
+        Probe(
+            id="prov-1",
+            cls=ProbeClass.PROVENANCE,
+            question="Which tool call produced the account code for vendor-00? Name the tool only.",
+            expected=lambda env: "intake_vendor",
+            test_turn=turns[5],
         ),
     ]
 

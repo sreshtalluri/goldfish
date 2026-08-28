@@ -30,8 +30,20 @@ die first and the ones least discussed.
 ## Status
 
 M0 complete: environment, probes, checkers, strategy interface, runner, and an
-offline simulator for validating the instrument. No real model results yet.
-Anything produced by `ContextBoundAgent` is a plumbing test, not a finding.
+offline simulator for validating the instrument.
+
+M1 in progress. All strategies required by the PRD are behind the common
+interface, model-free: `full_history`, `sliding_window`, `summarization`,
+`retrieval`, `scratchpad`, plus the optional `tool_masking`. What is missing
+for M1 to be complete is a real model adapter run (`AnthropicAdapter` exists
+but is untested against a live API key in this environment) and the first
+real recall curves that come from it.
+
+No real model results yet. Anything produced by `ContextBoundAgent` is a
+plumbing test, not a finding — and it is specifically unable to distinguish
+`scratchpad` from `sliding_window`, since it never reasons about what to
+persist; that differentiation only shows up with a real model that reads the
+scratchpad hint in the system prompt.
 
 ## Run
 

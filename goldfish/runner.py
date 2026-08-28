@@ -29,6 +29,13 @@ SYSTEM = (
     "plainly if you no longer have the information."
 )
 
+SCRATCHPAD_HINT = (
+    " Your context window is bounded and older turns may be evicted. "
+    "write_note/read_note are a durable scratchpad that survives eviction: "
+    "write down anything you might need much later, such as minted account "
+    "codes or policy facts, as soon as you learn it."
+)
+
 OPENING = (
     "Close out this ledger period. Requirements:\n"
     "- Post every pending transaction to the correct vendor account.\n"
@@ -44,6 +51,7 @@ PLANT_MARKERS = {
     "negative-1": lambda blob, env: "decommissioned" in blob,
     "goal-1": lambda blob, env: "USD" in blob,
     "artifact-1": lambda blob, env: '"new_balance"' in blob,
+    "prov-1": lambda blob, env: "intake_vendor(" in blob and env.vendor_to_code.get("vendor-00", "\0") in blob,
 }
 
 
@@ -88,6 +96,10 @@ def run_episode(
 ) -> EpisodeResult:
     env = LedgerEnv(seed=seed)
     probes = probes or default_probe_suite()
+    system = SYSTEM
+    needed = set(getattr(strategy, "needs_tools", ()))
+    if {"write_note", "read_note"} & needed:
+        system += SCRATCHPAD_HINT
     history: list[dict[str, Any]] = [{"role": "user", "kind": "goal", "content": OPENING}]
     transcript: list[str] = [OPENING]
     usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
@@ -107,7 +119,7 @@ def run_episode(
             history.append({"role": "user", "kind": "probe", "content": p.question})
             transcript.append(p.question)
             history = strategy.reduce(history, budget)
-            action = model.act(SYSTEM, history, env.tool_schema())
+            action = model.act(system, history, env.tool_schema())
             _accumulate(usage, action.usage)
             p.asked_turn = turn
             p.grade(action.content, env)
@@ -118,7 +130,7 @@ def run_episode(
 
         history = strategy.reduce(history, budget)
         peak = max(peak, approx_tokens(history))
-        action = model.act(SYSTEM, history, env.tool_schema())
+        action = model.act(system, history, env.tool_schema())
         _accumulate(usage, action.usage)
 
         if action.kind == "text":

@@ -94,7 +94,13 @@ class ContextBoundAgent:
 
     def _answer_probe(self, q: str, v: dict[str, Any]) -> str:
         found: str | None = None
-        if "account code" in q:
+        # Order matters: the provenance question's text contains the substring
+        # "account code", so it must be checked before the identifier branch
+        # or it gets misrouted and silently graded wrong. Caught by
+        # test_no_leak_under_full_history.
+        if "tool call produced" in q:
+            found = "intake_vendor" if "intake_vendor" in v["blob"] and v["codes"].get("vendor-00") else None
+        elif "account code" in q:
             found = v["codes"].get("vendor-00")
         elif "frozen list" in q:
             found = " ".join(sorted(v["frozen"])) if v["frozen"] else None
@@ -115,7 +121,25 @@ class ContextBoundAgent:
                 "settlement method": "ach",
                 "currency": "EUR",
                 "successfully posted": "0",
-            }.get(next((k for k in ("account code", "frozen list", "settlement method", "currency", "successfully posted") if k in q), ""), "unclear")
+                "tool call produced": "policy_lookup",
+            }.get(
+                next(
+                    (
+                        k
+                        for k in (
+                            "tool call produced",  # checked first: substring of "account code" question
+                            "account code",
+                            "frozen list",
+                            "settlement method",
+                            "currency",
+                            "successfully posted",
+                        )
+                        if k in q
+                    ),
+                    "",
+                ),
+                "unclear",
+            )
         return "I do not recall that from earlier in this session."
 
     # -- policy ---------------------------------------------------------------

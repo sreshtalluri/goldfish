@@ -139,6 +139,40 @@ class RetrievalOverTurns:
         return [note] + kept
 
 
+@dataclass
+class ExternalScratchpad:
+    """Agent maintains a durable file via write_note/read_note rather than
+    relying on the transcript. Eviction still happens oldest-first like
+    SlidingWindow, but any write_note/read_note call and its observation are
+    pinned so they survive eviction regardless of age. The bet under test is
+    axis B (where evicted content goes), not axis A: whether an agent that is
+    told to externalize facts before they age out actually outperforms one
+    that has nowhere to put them.
+
+    Declares needs_tools so the runner tells the agent this channel is
+    durable; a strategy-blind agent has no reason to reach for it.
+    """
+
+    name: str = "scratchpad"
+    keep_recent: int = 6
+    needs_tools: list[str] = field(default_factory=lambda: ["write_note", "read_note"])
+
+    def reduce(self, messages: list[Message], budget: int) -> list[Message]:
+        if approx_tokens(messages) <= budget:
+            return messages
+        pinned: set[int] = set()
+        for i, m in enumerate(messages):
+            if m.get("kind") == "observation" and m.get("tool") in ("write_note", "read_note"):
+                pinned.add(i)
+                if i > 0:
+                    pinned.add(i - 1)  # the call that produced this observation
+        pinned_tokens = approx_tokens([m for i, m in enumerate(messages) if i in pinned])
+        rest = [m for i, m in enumerate(messages) if i not in pinned]
+        kept_rest = SlidingWindow().reduce(rest, max(0, budget - pinned_tokens))
+        kept_rest_ids = {id(m) for m in kept_rest}
+        return [m for i, m in enumerate(messages) if i in pinned or id(m) in kept_rest_ids]
+
+
 Summarizer = Callable[[list[Message]], str]
 
 
@@ -197,4 +231,5 @@ REGISTRY: dict[str, Callable[[], Strategy]] = {
     "tool_masking": ToolOutputMasking,
     "retrieval": RetrievalOverTurns,
     "summarization": Summarization,
+    "scratchpad": ExternalScratchpad,
 }
