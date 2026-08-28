@@ -2,7 +2,7 @@
 environment, since a wrong confidence interval or half life formula would
 misreport every downstream finding without ever failing a harness invariant.
 """
-from goldfish.metrics import cost_usd, cost_usd_no_cache, half_life, wilson_ci
+from goldfish.metrics import cost_usd, cost_usd_no_cache, half_life, recall_by_generation, wilson_ci
 
 
 def test_wilson_ci_contains_point_estimate():
@@ -77,3 +77,9 @@ def test_half_life_left_censored_when_already_below_half_at_shortest_distance():
 def test_half_life_empty_input():
     hl = half_life([])
     assert hl.turns is None and hl.censored is None
+
+
+def test_recall_by_generation_buckets_correctly():
+    points = [(0, True), (0, True), (1, True), (1, False), (2, False)]
+    buckets = recall_by_generation(points)
+    assert buckets == {0: (2, 2), 1: (1, 2), 2: (0, 1)}

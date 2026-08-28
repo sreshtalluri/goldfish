@@ -115,3 +115,14 @@ def half_life(points: list[tuple[int, bool]]) -> HalfLife:
             frac = (y0 - 0.5) / (y0 - y1)
             return HalfLife(x0 + frac * (x1 - x0), None)
     return HalfLife(float(xs[-1]), "right")
+
+
+def recall_by_generation(points: list[tuple[int, bool]]) -> dict[int, tuple[int, int]]:
+    """points: (generation, recalled) pairs. Returns generation -> (recalled,
+    total), for the section 6 question: does fidelity loss compound linearly
+    across compaction generations, or does it cliff after some threshold.
+    """
+    buckets: dict[int, list[bool]] = {}
+    for gen, recalled in points:
+        buckets.setdefault(gen, []).append(recalled)
+    return {gen: (sum(vals), len(vals)) for gen, vals in sorted(buckets.items())}
