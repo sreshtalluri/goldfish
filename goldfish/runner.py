@@ -143,7 +143,14 @@ def run_episode(
             transcript.append(p.question)
             history = strategy.reduce(history, budget)
             assert history[-1]["role"] != "assistant", "probe turn must end on a user message"
-            action = model.act(system, history, env.tool_schema())
+            # No tools offered on a probe turn: with tools available the model
+            # sometimes calls one instead of answering, leaving action.content
+            # empty. That is not a confident wrong answer (HALLUCINATED) or an
+            # admission (ADMITTED) — it is a third failure mode this probe
+            # class doesn't intend to measure, so it is designed out here
+            # rather than added to Outcome. Found by seeing constraint-1 grade
+            # HALLUCINATED with answer='' across several real strategies.
+            action = model.act(system, history, [])
             _accumulate(usage, action.usage)
             p.asked_turn = turn
             p.grade(action.content, env)

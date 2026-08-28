@@ -216,12 +216,17 @@ class AnthropicAdapter:
         sys_block: Any = [{"type": "text", "text": system}]
         if self.cache:
             sys_block[0]["cache_control"] = {"type": "ephemeral"}
-        resp = client.messages.create(
+        kwargs: dict[str, Any] = dict(
             model=self.model,
             max_tokens=self.max_tokens,
             system=sys_block,
             messages=[{"role": m.get("role", "user"), "content": str(m.get("content", ""))} for m in messages],
-            tools=[
+        )
+        # Only set tools when non-empty: an empty tools list is how probe
+        # turns force a genuine text answer instead of a deflecting tool
+        # call, and the request should not offer tools it means to withhold.
+        if tools:
+            kwargs["tools"] = [
                 {
                     "name": t["name"],
                     "description": t["doc"],
@@ -232,8 +237,8 @@ class AnthropicAdapter:
                     },
                 }
                 for t in tools
-            ],
-        )
+            ]
+        resp = client.messages.create(**kwargs)
         usage = {
             "input": resp.usage.input_tokens,
             "output": resp.usage.output_tokens,
