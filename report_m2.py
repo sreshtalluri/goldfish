@@ -10,7 +10,19 @@ import sys
 from collections import defaultdict
 
 from goldfish import strategies
-from goldfish.metrics import cost_usd, cost_usd_no_cache, half_life, wilson_ci
+from goldfish.metrics import cost_usd, cost_usd_no_cache, half_life, recall_by_generation, wilson_ci
+
+# Strategies whose "generation" means what PRD section 6 means by it: a
+# discrete recompaction event, so generation N+1 is built from generation N's
+# already-compacted output ("summarizing a summary"). The oldest-first
+# strategies (sliding_window, tool_masking, retrieval, scratchpad,
+# structured_notes) also increment a generation counter every time reduce()
+# evicts anything, but under sustained budget pressure that fires almost
+# every turn -- their "generation" is much closer to a proxy for turns spent
+# under pressure than a count of discrete compounding events, and reporting
+# it next to summarization's without saying so would imply a comparability
+# the data doesn't have.
+RECOMPACTING_STRATEGIES = {"summarization"}
 
 CLASSES = ["identifier", "constraint", "negative_knowledge", "goal", "artifact_state", "provenance"]
 
@@ -100,6 +112,36 @@ def report(rows: list[dict]) -> None:
     print(f"total no-cache counterfactual: ${total_no_cache:.2f}")
 
 
+def generation_report(rows: list[dict]) -> None:
+    order = [s for s in strategies.REGISTRY if any(r["strategy"] == s for r in rows)]
+    print("=== recall by compaction generation ===")
+    print("(recompacting strategies only: generation is a discrete re-summarization")
+    print(" count, comparable turn to turn. Others increment on every real eviction,")
+    print(" which under a tight budget fires almost every turn -- see comment in")
+    print(" report_m2.py. Reported for completeness, not as a compounding curve.)\n")
+    for s in order:
+        if s in RECOMPACTING_STRATEGIES:
+            label = " (recompacting)"
+        elif s == "full_history":
+            label = " (never evicts)"
+        else:
+            label = " (near-continuous, see caveat)"
+        rs = [r for r in rows if r["strategy"] == s]
+        points = [
+            (p["generation_at_ask"], p["outcome"] == "recalled")
+            for r in rs
+            for p in r["probes"]
+            if p["generation_at_ask"] is not None
+        ]
+        buckets = recall_by_generation(points)
+        curve = "  ".join(f"g{g}:{k}/{n}" for g, (k, n) in buckets.items())
+        print(f"{s}{label}:\n  {curve}\n")
+
+
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else "results_full_matrix_real.jsonl"
-    report(load(path))
+    rows = load(path)
+    report(rows)
+    if any("generation_at_ask" in p for r in rows for p in r["probes"]):
+        print()
+        generation_report(rows)

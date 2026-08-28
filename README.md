@@ -105,6 +105,45 @@ probes/strategy): full_history 0.85 [0.73, 0.92], scratchpad 0.70 [0.57,
 0.81], tool_masking 0.69 [0.55, 0.79], sliding_window 0.65 [0.51, 0.76],
 retrieval 0.63 [0.50, 0.75], summarization 0.54 [0.41, 0.66].
 
+M3, in progress. Two pieces landed:
+
+**`structured_notes`** (PRD section 5 item 6, the one strategy actually still
+missing — `tool_masking` was already built in M0 despite the PRD listing it
+as an M3 item too). A single overwriting `annotate` note, pinned across
+eviction, with the rest of the budget filled by as-much-recent-context-as-fits
+rather than an LLM summary or an unbounded pinned message set. Two real bugs
+found and fixed by the same real-model-smoke-test discipline as M1/M2 (see
+commit history): the note wasn't actually pinned under pressure, and the
+fallback path could leave a dangling assistant-role message as the new
+history tail, which the runner's own invariant assertion caught immediately.
+
+**Compaction generation tracking.** Every strategy now records how many real
+compactions had happened by the time each probe was asked
+(`Probe.generation_at_ask`), not just a final count at episode end. Ran a
+21-episode sweep (7 strategies x 3 seeds, budget=200 to force generation 5+
+within one episode) — `results_generation_study.jsonl`, `sweep_generation.py`
+to reproduce.
+
+**What the data actually shows, honestly:** the generation study surfaced a
+real methodological limitation before it surfaced a finding. Only
+`summarization` has generation semantics matching the PRD's "summarizing a
+summary" framing (a discrete re-summarization count, maxing at 22-25 over 60
+turns). Every oldest-first strategy's generation counter fires on nearly
+every turn once a tight budget is exceeded (max generation 41-53 out of ~60
+turns) — it's a proxy for turns-under-pressure, not a comparable "compaction
+generation" in the same sense. Worse: because `default_probe_suite()` tests
+each class once per episode at one fixed turn, probe *class* and *generation*
+are confounded (identifier always lands around generation 5-6, constraint
+7-8, negative_knowledge 9-10, goal 11-12, artifact_state 13-14, provenance
+15-16, consistent across all 3 seeds) — so "recall by generation," pooled
+across classes, is largely relabeling "recall by which class happens to be
+tested at that point in the episode," not a within-fact compounding-decay
+curve. A genuine "does loss compound linearly or cliff" answer needs a probe
+design that re-tests the *same* fact at multiple generations, which is a
+real gap for future work, not something this dataset can answer yet. Full
+generation tables (with this caveat) via
+`python3 report_m2.py results_generation_study.jsonl`.
+
 ## Run
 
 ```bash
