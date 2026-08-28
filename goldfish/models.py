@@ -227,8 +227,8 @@ class AnthropicAdapter:
                     "description": t["doc"],
                     "input_schema": {
                         "type": "object",
-                        "properties": {a: {"type": "string"} for a in t["args"]},
-                        "required": t["args"],
+                        "properties": {a: {"type": typ} for a, typ in t["args"].items()},
+                        "required": list(t["args"]),
                     },
                 }
                 for t in tools

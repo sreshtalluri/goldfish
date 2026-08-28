@@ -24,6 +24,27 @@ def _code_for(vendor: str, seed: int) -> str:
     return f"AC-{h[:4].upper()}-{int(h[4:8], 16) % 9000 + 1000}"
 
 
+def _coerce_args(args: dict[str, Any], schema: dict[str, str]) -> tuple[dict[str, Any], str | None]:
+    """Coerce args to the types declared in tool_schema(), or fail the call
+    with a message the agent can see and correct from, rather than either
+    silently storing a malformed value or raising past the tool boundary."""
+    out = dict(args)
+    for name, typ in schema.items():
+        if name not in out:
+            continue
+        if typ == "number":
+            try:
+                out[name] = float(out[name])
+            except (TypeError, ValueError):
+                return out, f"argument {name!r} must be a bare number, got {out[name]!r}"
+        elif typ == "integer":
+            try:
+                out[name] = int(float(out[name]))
+            except (TypeError, ValueError):
+                return out, f"argument {name!r} must be a bare integer, got {out[name]!r}"
+    return out, None
+
+
 @dataclass
 class ToolResult:
     ok: bool
@@ -82,15 +103,30 @@ class LedgerEnv:
     # ------------------------------------------------------------------ tools
 
     def tool_schema(self) -> list[dict[str, Any]]:
+        # args maps name -> JSON-schema type. This is not decoration: it is
+        # sent to the real model's tool-calling contract (see AnthropicAdapter),
+        # and enforced on the way in by call() below. Without it every argument
+        # is effectively an unconstrained string, and a real model will
+        # sometimes fill a numeric field with a description instead of a
+        # number (e.g. total_posted="$0.00 USD (0 of 16 posted)"), which
+        # crashes downstream scoring instead of failing the tool call.
         return [
-            {"name": "list_pending", "args": [], "doc": "List unprocessed transactions."},
-            {"name": "intake_vendor", "args": ["vendor"], "doc": "Register a vendor. Returns its permanent account code."},
-            {"name": "get_account", "args": ["code"], "doc": "Look up an account by code."},
-            {"name": "post_transaction", "args": ["code", "tx_id", "amount", "method"], "doc": "Post a transaction to an account."},
-            {"name": "policy_lookup", "args": [], "doc": "Return current posting policy, including frozen vendors."},
-            {"name": "write_note", "args": ["key", "value"], "doc": "Write to the durable scratchpad."},
-            {"name": "read_note", "args": ["key"], "doc": "Read from the durable scratchpad."},
-            {"name": "file_report", "args": ["total_posted", "accounts_touched"], "doc": "File the closing report and end the episode."},
+            {"name": "list_pending", "args": {}, "doc": "List unprocessed transactions."},
+            {"name": "intake_vendor", "args": {"vendor": "string"}, "doc": "Register a vendor. Returns its permanent account code."},
+            {"name": "get_account", "args": {"code": "string"}, "doc": "Look up an account by code."},
+            {
+                "name": "post_transaction",
+                "args": {"code": "string", "tx_id": "string", "amount": "number", "method": "string"},
+                "doc": "Post a transaction to an account.",
+            },
+            {"name": "policy_lookup", "args": {}, "doc": "Return current posting policy, including frozen vendors."},
+            {"name": "write_note", "args": {"key": "string", "value": "string"}, "doc": "Write to the durable scratchpad."},
+            {"name": "read_note", "args": {"key": "string"}, "doc": "Read from the durable scratchpad."},
+            {
+                "name": "file_report",
+                "args": {"total_posted": "number", "accounts_touched": "integer"},
+                "doc": "File the closing report and end the episode. total_posted is the bare numeric sum, not a description.",
+            },
         ]
 
     def call(self, name: str, args: dict[str, Any]) -> ToolResult:
@@ -98,10 +134,15 @@ class LedgerEnv:
         if fn is None:
             result = ToolResult(False, None, f"unknown tool {name!r}")
         else:
-            try:
-                result = fn(**args)
-            except TypeError as exc:
-                result = ToolResult(False, None, f"bad arguments for {name}: {exc}")
+            schema = next((t["args"] for t in self.tool_schema() if t["name"] == name), {})
+            coerced, err = _coerce_args(args, schema)
+            if err:
+                result = ToolResult(False, None, err)
+            else:
+                try:
+                    result = fn(**coerced)
+                except TypeError as exc:
+                    result = ToolResult(False, None, f"bad arguments for {name}: {exc}")
         self.call_log.append({"tool": name, "args": args, "ok": result.ok, "payload": result.payload, "error": result.error})
         return result
 

@@ -5,6 +5,7 @@ lie. Both invariants below have already caught real bugs in this harness.
 """
 import pytest
 from goldfish import run_episode, strategies
+from goldfish.env import LedgerEnv
 from goldfish.models import ContextBoundAgent
 from goldfish.probes import Outcome, Probe, ProbeClass, default_probe_suite
 
@@ -50,6 +51,17 @@ def test_outcomes_are_three_valued():
     rs = [_run(strategies.Summarization(), 150, s) for s in range(5)]
     outs = {p.outcome for r in rs for p in r.probes}
     assert Outcome.HALLUCINATED in outs and Outcome.ADMITTED in outs
+
+
+def test_file_report_rejects_non_numeric_total():
+    """A real model once passed total_posted as a description
+    ("$0.00 USD (0 of 16 posted)") instead of a bare number, which crashed
+    score_behavioural downstream instead of failing the tool call. The
+    environment must reject this at the boundary, not accept it silently."""
+    env = LedgerEnv(seed=0)
+    result = env.call("file_report", {"total_posted": "$0.00 USD (0 of 16 posted)", "accounts_touched": 0})
+    assert not result.ok
+    assert env.report_filed is None
 
 
 def test_short_numeric_truth_is_not_a_substring_false_positive():
