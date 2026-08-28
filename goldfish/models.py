@@ -24,6 +24,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from dotenv import load_dotenv
+
+# Loads ANTHROPIC_API_KEY (and friends) from a .env file in the working
+# directory if present. No-op, not an error, if the file or the key is
+# absent — ContextBoundAgent and the offline path never touch this.
+load_dotenv()
+
 Message = dict[str, Any]
 
 
@@ -184,7 +191,7 @@ class AnthropicAdapter:
     """Real runs. Pin the version string in every report; an unpinned model
     name makes a result unreproducible within weeks."""
 
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-sonnet-5"
     max_tokens: int = 1024
     cache: bool = True
     name: str = "anthropic"
