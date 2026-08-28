@@ -32,18 +32,38 @@ die first and the ones least discussed.
 M0 complete: environment, probes, checkers, strategy interface, runner, and an
 offline simulator for validating the instrument.
 
-M1 in progress. All strategies required by the PRD are behind the common
-interface, model-free: `full_history`, `sliding_window`, `summarization`,
-`retrieval`, `scratchpad`, plus the optional `tool_masking`. What is missing
-for M1 to be complete is a real model adapter run (`AnthropicAdapter` exists
-but is untested against a live API key in this environment) and the first
-real recall curves that come from it.
+M1: first real recall curves obtained. All 6 strategies (`full_history`,
+`sliding_window`, `tool_masking`, `retrieval`, `summarization`, `scratchpad`)
+run against a live model (`claude-sonnet-5`, `AnthropicAdapter`), 3 seeds
+each, budget=700. Raw results in `results_full_matrix_real.jsonl`.
 
-No real model results yet. Anything produced by `ContextBoundAgent` is a
-plumbing test, not a finding — and it is specifically unable to distinguish
-`scratchpad` from `sliding_window`, since it never reasons about what to
-persist; that differentiation only shows up with a real model that reads the
-scratchpad hint in the system prompt.
+Getting a live run working surfaced and fixed several real bugs the offline
+simulator could not catch, since `ContextBoundAgent` never exercises message
+role structure, tool-call formatting, or free-text answer parsing the way a
+real model does: a turn-loop bug that made every real episode fail
+immediately (conversation ending in assistant role — an "assistant prefill"
+the API rejects), a probe-grading substring bug that could silently score a
+wrong numeric answer as recalled, an unenforced negative-knowledge dependency
+that a real model could simply route around and never discover, unvalidated
+tool arguments that could crash scoring on a malformed call, and a
+tool-offered-during-probe issue that miscounted deflection as hallucination.
+See commit history for each.
+
+**Preliminary findings (n=3 seeds, single model, single budget — not yet the
+seeded/CI-backed numbers M2 will produce, treat as suggestive):**
+- `artifact_state` recall collapses under every compacting strategy (0.00-0.33)
+  vs. 0.67 under the full-history control — reproduces the Factory.ai finding
+  this project is built around (section 0 of the PRD).
+- Admission rate is 0.00 across every strategy: the model never once said "I
+  don't know" when wrong. Every miss was a confident, silent substitution,
+  not a blank — the failure mode the PRD calls out as the operationally
+  dangerous one (section 6).
+- `scratchpad` is the best-performing non-control strategy (0.83 overall
+  recall, matching full_history on 4 of 6 classes) — a real result in favor
+  of the "give the agent a durable file" hypothesis, not just a plausible one.
+- `summarization` lost `negative_knowledge` completely (0.00) despite
+  `tool_masking` and `scratchpad` holding it at 1.00 — summarizing over a
+  failed-approach fact seems to be where that fact specifically dies.
 
 ## Run
 
