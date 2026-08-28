@@ -48,6 +48,23 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(s).lower())
 
 
+def _matches(truth_norm: str, answer_norm: str) -> bool:
+    """Plain substring containment is unsafe for short numeric truths: "0" is
+    a substring of "10", "20", "104"... which would silently grade a wrong
+    numeric answer as recalled. Real models answer artifact/count probes in
+    free text ("I've posted 10 transactions"), where this fires constantly.
+
+    Word identifiers (account codes, vendor names) still use containment,
+    since separators are already stripped by _norm and there is no digit-glue
+    risk. Purely numeric truths require the match to sit on digit boundaries.
+    """
+    if not truth_norm:
+        return False
+    if truth_norm.isdigit():
+        return re.search(rf"(?<!\d){re.escape(truth_norm)}(?!\d)", answer_norm) is not None
+    return truth_norm in answer_norm
+
+
 @dataclass
 class Probe:
     id: str
@@ -71,7 +88,7 @@ class Probe:
     def grade(self, answer: str, env) -> Outcome:
         self.answer = answer
         truth = self.expected(env)
-        if truth and _norm(truth) in _norm(answer):
+        if _matches(_norm(truth), _norm(answer)):
             self.outcome = Outcome.RECALLED
         elif _ADMISSION.search(answer):
             self.outcome = Outcome.ADMITTED

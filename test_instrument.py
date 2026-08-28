@@ -6,7 +6,7 @@ lie. Both invariants below have already caught real bugs in this harness.
 import pytest
 from goldfish import run_episode, strategies
 from goldfish.models import ContextBoundAgent
-from goldfish.probes import Outcome, default_probe_suite
+from goldfish.probes import Outcome, Probe, ProbeClass, default_probe_suite
 
 UNBOUNDED = 10**9
 
@@ -50,3 +50,15 @@ def test_outcomes_are_three_valued():
     rs = [_run(strategies.Summarization(), 150, s) for s in range(5)]
     outs = {p.outcome for r in rs for p in r.probes}
     assert Outcome.HALLUCINATED in outs and Outcome.ADMITTED in outs
+
+
+def test_short_numeric_truth_is_not_a_substring_false_positive():
+    """"0" is a literal substring of "10", "20", "104"... A real model answers
+    count probes in free text ("I've posted 10 transactions so far"), so plain
+    substring matching would grade a confidently wrong count as recalled.
+    Caught on the first live-model run, where this inflated every artifact
+    state result until fixed."""
+    p = Probe(id="x", cls=ProbeClass.ARTIFACT, question="how many?", expected=lambda env: "0", test_turn=0)
+    assert p.grade("I have posted 10 transactions so far.", env=None) is Outcome.HALLUCINATED
+    assert p.grade("0", env=None) is Outcome.RECALLED
+    assert p.grade("I have posted 0 transactions so far.", env=None) is Outcome.RECALLED
