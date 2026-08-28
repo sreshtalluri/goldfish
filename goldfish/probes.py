@@ -77,6 +77,7 @@ class Probe:
     planted_turn: int | None = None
     asked_turn: int | None = None
     answer: str | None = None
+    generation_at_ask: int | None = None
     outcome: Outcome = Outcome.NOT_TESTED
 
     @property

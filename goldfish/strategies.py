@@ -54,8 +54,11 @@ class SlidingWindow:
 
     name: str = "sliding_window"
     needs_tools: list[str] = field(default_factory=list)
+    generation: int = 0
 
     def reduce(self, messages: list[Message], budget: int) -> list[Message]:
+        if approx_tokens(messages) > budget:
+            self.generation += 1
         kept: list[Message] = []
         used = 0
         for m in reversed(messages):
@@ -78,6 +81,7 @@ class ToolOutputMasking:
     keep_recent: int = 6
     min_payload: int = 120  # small observations are cheap; masking them buys nothing
     needs_tools: list[str] = field(default_factory=list)
+    generation: int = 0
 
     def reduce(self, messages: list[Message], budget: int) -> list[Message]:
         # Mask only under pressure. Masking unconditionally made this strategy
@@ -85,6 +89,7 @@ class ToolOutputMasking:
         # every comparison against it. Caught by test_control_invariance.
         if approx_tokens(messages) <= budget:
             return messages
+        self.generation += 1
         out: list[Message] = []
         n = len(messages)
         for i, m in enumerate(messages):
@@ -115,10 +120,12 @@ class RetrievalOverTurns:
     name: str = "retrieval"
     top_k: int = 4
     needs_tools: list[str] = field(default_factory=list)
+    generation: int = 0
 
     def reduce(self, messages: list[Message], budget: int) -> list[Message]:
         if approx_tokens(messages) <= budget:
             return messages
+        self.generation += 1
         query = _tokenize(str(messages[-1].get("content", "")))
         head_budget = int(budget * 0.7)
         kept = SlidingWindow().reduce(messages, head_budget)
@@ -156,10 +163,12 @@ class ExternalScratchpad:
     name: str = "scratchpad"
     keep_recent: int = 6
     needs_tools: list[str] = field(default_factory=lambda: ["write_note", "read_note"])
+    generation: int = 0
 
     def reduce(self, messages: list[Message], budget: int) -> list[Message]:
         if approx_tokens(messages) <= budget:
             return messages
+        self.generation += 1
         pinned: set[int] = set()
         for i, m in enumerate(messages):
             if m.get("kind") == "observation" and m.get("tool") in ("write_note", "read_note"):
@@ -187,15 +196,30 @@ class StructuredNotes:
 
     name: str = "structured_notes"
     needs_tools: list[str] = field(default_factory=lambda: ["annotate"])
+    generation: int = 0
 
     def reduce(self, messages: list[Message], budget: int) -> list[Message]:
         if approx_tokens(messages) <= budget:
             return messages
-        latest_note = None
-        for m in messages:
+        self.generation += 1
+        latest_idx = None
+        for i, m in enumerate(messages):
             if m.get("kind") == "observation" and m.get("tool") == "annotate":
-                latest_note = m
-        note_list = [latest_note] if latest_note is not None else []
+                latest_idx = i
+        excluded: set[int] = set()
+        note_list: list[Message] = []
+        if latest_idx is not None:
+            excluded.add(latest_idx)
+            # Exclude the paired call too, not just the observation. If the
+            # note happens to be the very last thing in history, dropping
+            # only the observation leaves its assistant-role call dangling
+            # as the new tail — a real crash, caught by the "must end on a
+            # user message" runner assertion the first time this ran
+            # against a live model, since the offline simulator never calls
+            # annotate and so never exercises this path at all.
+            if latest_idx > 0 and messages[latest_idx - 1].get("kind") == "action":
+                excluded.add(latest_idx - 1)
+            note_list = [messages[latest_idx]]
         # The note is pinned, not just prepended: squeezing it through a
         # second SlidingWindow pass over [note] + rest would treat it as the
         # oldest, and therefore first-evicted, message under real pressure —
@@ -205,7 +229,7 @@ class StructuredNotes:
         # rather than hard-capping to a fixed tail length regardless of how
         # much budget is actually available.
         note_tokens = approx_tokens(note_list)
-        rest = [m for m in messages if m is not latest_note]
+        rest = [m for i, m in enumerate(messages) if i not in excluded]
         kept_rest = SlidingWindow().reduce(rest, max(0, budget - note_tokens))
         return note_list + kept_rest
 

@@ -104,3 +104,29 @@ def test_structured_notes_preserves_latest_annotation_under_pressure():
         messages.append({"role": "user", "kind": "observation", "tool": "list_pending", "content": "y" * 200})
     out = strategies.StructuredNotes().reduce(messages, budget=50)
     assert any(m.get("tool") == "annotate" for m in out)
+
+
+def test_structured_notes_never_ends_on_assistant_when_note_is_last():
+    """If the annotate call+observation pair is the most recent thing in
+    history, excluding only the observation (not its paired call) leaves the
+    unpaired assistant-role call as the new tail. The offline simulator never
+    calls annotate, so this only ever showed up on a live model run."""
+    messages = [{"role": "user", "kind": "goal", "content": "x" * 500}]
+    for i in range(20):
+        messages.append({"role": "assistant", "kind": "action", "content": f"noise {i}" * 20})
+        messages.append({"role": "user", "kind": "observation", "tool": "list_pending", "content": "y" * 200})
+    messages.append({"role": "assistant", "kind": "action", "content": "annotate({'note': 'critical'})"})
+    messages.append({"role": "user", "kind": "observation", "tool": "annotate", "content": '{"bytes": 8}'})
+    out = strategies.StructuredNotes().reduce(messages, budget=50)
+    assert out[-1]["role"] != "assistant"
+
+
+def test_generation_at_ask_increments_under_pressure():
+    """A tight budget with a long episode should force multiple real
+    compactions before the last probe is asked, and each probe's recorded
+    generation should be non-decreasing over the episode."""
+    r = run_episode(strategies.SlidingWindow(), ContextBoundAgent(seed=0), seed=0,
+                     budget=150, probes=default_probe_suite())
+    gens = [p.generation_at_ask for p in r.probes if p.asked_turn is not None]
+    assert any(g and g > 0 for g in gens), "expected at least one probe asked after a real compaction"
+    assert gens == sorted(gens)

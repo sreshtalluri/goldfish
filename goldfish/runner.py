@@ -99,7 +99,14 @@ class EpisodeResult:
             "usage": self.usage,
             "behavioural": vars(self.behavioural),
             "probes": [
-                {"id": p.id, "class": p.cls.value, "distance": p.distance, "outcome": p.outcome.value, "answer": p.answer}
+                {
+                    "id": p.id,
+                    "class": p.cls.value,
+                    "distance": p.distance,
+                    "outcome": p.outcome.value,
+                    "answer": p.answer,
+                    "generation_at_ask": p.generation_at_ask,
+                }
                 for p in self.probes
             ],
         }
@@ -163,6 +170,7 @@ def run_episode(
             action = model.act(system, history, [])
             _accumulate(usage, action.usage)
             p.asked_turn = turn
+            p.generation_at_ask = getattr(strategy, "generation", 0)
             p.grade(action.content, env)
             history.append({"role": "assistant", "kind": "answer", "content": action.content})
             transcript.append(action.content)
