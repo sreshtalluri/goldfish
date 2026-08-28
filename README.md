@@ -49,27 +49,68 @@ tool arguments that could crash scoring on a malformed call, and a
 tool-offered-during-probe issue that miscounted deflection as hallucination.
 See commit history for each.
 
-**Preliminary findings (n=3 seeds, single model, single budget — not yet the
-seeded/CI-backed numbers M2 will produce, treat as suggestive):**
-- `artifact_state` recall collapses under every compacting strategy (0.00-0.33)
-  vs. 0.67 under the full-history control — reproduces the Factory.ai finding
-  this project is built around (section 0 of the PRD).
-- Admission rate is 0.00 across every strategy: the model never once said "I
-  don't know" when wrong. Every miss was a confident, silent substitution,
-  not a blank — the failure mode the PRD calls out as the operationally
-  dangerous one (section 6).
-- `scratchpad` is the best-performing non-control strategy (0.83 overall
-  recall, matching full_history on 4 of 6 classes) — a real result in favor
-  of the "give the agent a durable file" hypothesis, not just a plausible one.
-- `summarization` lost `negative_knowledge` completely (0.00) despite
-  `tool_masking` and `scratchpad` holding it at 1.00 — summarizing over a
-  failed-approach fact seems to be where that fact specifically dies.
+M2: context half life, confidence intervals, cache-aware cost accounting.
+`goldfish/metrics.py` (Wilson score intervals, linear-interpolated half life
+with explicit left/right censoring, actual-vs-no-cache cost). Extended the
+real dataset to 3 turn-distance batteries (`early`/`mid`/`late`) x 3 seeds x
+6 strategies = 54 episodes, `results_full_matrix_real.jsonl`. Reproduce the
+full report with:
+
+```bash
+python report_m2.py results_full_matrix_real.jsonl
+```
+
+See `m2_report.txt` for the last full run's output.
+
+**Context half life (turns to 50% recall), per strategy x class** — the
+project's headline metric, `>N` means recall never dropped below 50% within
+the tested range (right-censored, true half life is at least N), `<N` means
+it was already below 50% at the shortest distance tested:
+
+| strategy | identifier | constraint | negative_knowledge | goal | artifact_state | provenance |
+|---|---|---|---|---|---|---|
+| full_history | >23 | >29 | >27 | >41 | **<9** | >48 |
+| sliding_window | >23 | >29 | 14.0 | >41 | 17.5 | >48 |
+| tool_masking | 20.0 | >29 | 20.0 | >41 | 17.5 | >48 |
+| retrieval | 20.0 | >29 | 5.0 | 38.0 | **<9** | >48 |
+| summarization | >23 | >29 | **<4** | **<19** | 10.5 | >48 |
+| scratchpad | >22 | >30 | >25 | >41 | 6.5 | <21 |
+
+**Findings, n=3 seeds per distance point (small — read as directional, not
+final; M3 is where seed count and model coverage grow):**
+- `artifact_state` has the shortest half life under every strategy, including
+  the control (full_history's own half life for it is under 9 turns — the
+  environment makes agents lose track of what they've done even with nothing
+  evicted). This is the strongest, most consistent signal in the dataset and
+  matches the Factory.ai finding the project is named after.
+- `constraint` and `goal` never dropped below 50% recall within ~30-40 turns
+  under *any* strategy tested here — the most durable classes by a wide
+  margin, which the single-probe-per-class M1 numbers didn't surface.
+- `summarization` uniquely drove `negative_knowledge` (<4 turns) and `goal`
+  (<19 turns) to fast, left-censored collapse — actively summarizing over
+  these facts looks worse than mechanically evicting them (sliding_window
+  holds negative_knowledge to 14 turns, almost 4x longer).
+- **Cache-aware cost inversion, confirmed with more data:** `full_history`'s
+  cache benefit ratio (actual cost vs. a no-cache counterfactual) is 2.2x;
+  every compacting strategy sits at 1.3-1.4x, because rewriting history on
+  every compaction invalidates the cache prefix. Consequence: `full_history`
+  is the *cheapest* strategy per episode ($0.20) of all six — every
+  compacting strategy costs 49-59% more, exactly inverting the standard
+  "compact to save money" justification. Full table in `m2_report.txt`.
+- Admission rate is still 0.00 across all 54 episodes — no model answer was
+  ever an honest "I don't know," only correct or confidently wrong.
+
+Overall recall with 95% Wilson CI, pooled across all 3 batteries (n=54
+probes/strategy): full_history 0.85 [0.73, 0.92], scratchpad 0.70 [0.57,
+0.81], tool_masking 0.69 [0.55, 0.79], sliding_window 0.65 [0.51, 0.76],
+retrieval 0.63 [0.50, 0.75], summarization 0.54 [0.41, 0.66].
 
 ## Run
 
 ```bash
 python run_demo.py          # offline sweep, no API key needed
-python -m pytest tests/     # instrument validity tests
+python -m pytest             # instrument + metrics validity tests
+python report_m2.py results_full_matrix_real.jsonl   # half life / CI / cost report
 ```
 
 ## Adding a strategy
