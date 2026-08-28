@@ -195,11 +195,24 @@ class AnthropicAdapter:
     max_tokens: int = 1024
     cache: bool = True
     name: str = "anthropic"
+    max_retries: int = 6
+    _client: Any = field(default=None, init=False, repr=False, compare=False)
 
-    def act(self, system: str, messages: list[Message], tools: list[dict]) -> Action:
+    def _get_client(self):
         import anthropic  # imported lazily so the offline path has no dependency
 
-        client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        # Built once per adapter instance and reused across every turn of an
+        # episode (and across seeds, since a strategy/model pair is typically
+        # reused), rather than reconnecting on every call. max_retries is
+        # explicit rather than left at the SDK default: a full seed sweep is
+        # dozens of consecutive calls, and 429s from bursty request rates are
+        # routine, not exceptional, at that volume.
+        if self._client is None:
+            self._client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=self.max_retries)
+        return self._client
+
+    def act(self, system: str, messages: list[Message], tools: list[dict]) -> Action:
+        client = self._get_client()
         sys_block: Any = [{"type": "text", "text": system}]
         if self.cache:
             sys_block[0]["cache_control"] = {"type": "ephemeral"}
