@@ -36,6 +36,14 @@ SCRATCHPAD_HINT = (
     "codes or policy facts, as soon as you learn it."
 )
 
+NOTES_HINT = (
+    " Your context window is bounded and older turns may be evicted. "
+    "annotate is a single running note that survives eviction: call it "
+    "whenever the important facts change, overwriting the previous note "
+    "with everything you would need if you lost the rest of this "
+    "conversation."
+)
+
 # The 'wire' instruction below forces the negative-1 plant event (see
 # PLANT_MARKERS): without it a real model has no reason to ever try the
 # now-decommissioned rail (the tool doc does not enumerate valid methods),
@@ -111,6 +119,8 @@ def run_episode(
     needed = set(getattr(strategy, "needs_tools", ()))
     if {"write_note", "read_note"} & needed:
         system += SCRATCHPAD_HINT
+    if "annotate" in needed:
+        system += NOTES_HINT
     history: list[dict[str, Any]] = [{"role": "user", "kind": "goal", "content": OPENING}]
     transcript: list[str] = [OPENING]
     usage = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
