@@ -144,6 +144,31 @@ real gap for future work, not something this dataset can answer yet. Full
 generation tables (with this caveat) via
 `python3 report_m2.py results_generation_study.jsonl`.
 
+**Multi-model coverage (PRD section 7: one Anthropic, one OpenAI, one open
+weight).** Built and blocked only on API keys, not on any remaining code.
+`OpenAICompatibleAdapter` (`goldfish/models.py`) serves both OpenAI itself and
+any OpenAI-compatible open-weight endpoint via `base_url` — one class instead
+of two, satisfying two of the three required adapters. Deliberately scoped as
+a coverage check rather than a full replication of the Anthropic matrix: full
+6-strategy x 3-battery x 3-seed x 3-model replication would cost roughly
+3x the M2 run (~$45-50) to answer a question this project doesn't need to
+claim ("do the curves match in every detail"). Instead, `sweep_multimodel.py`
+runs the 3 strategies with the clearest M2 findings (`full_history` control,
+`summarization`, `sliding_window`) x 2 seeds x 1 battery (budget=700) against
+`gpt-5-mini` and Groq-hosted `llama-3.3-70b-versatile`, to check the cheaper,
+still-real question: does the ranking on the two headline findings (cache
+inversion, per-class half life) hold up on a second and third model family.
+`report_m2.py` now groups by (model, strategy) so a file mixing models
+reports each correctly, including per-model pricing (`goldfish/metrics.py`
+`PRICES_BY_MODEL`).
+
+To run: add `OPENAI_API_KEY` and `GROQ_API_KEY` to `.env`, then
+
+```bash
+python3 sweep_multimodel.py            # smoke-test the first line, then let it finish (~12 episodes)
+python3 report_m2.py results_multimodel.jsonl
+```
+
 ## Run
 
 ```bash

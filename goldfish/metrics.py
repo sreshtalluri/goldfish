@@ -41,6 +41,39 @@ SONNET_5_PRICES = {
     "cache_read": 0.20,
 }  # USD per million tokens
 
+# gpt-5-mini, official pricing as of 2026-09-04 (platform.openai.com pricing
+# docs). Cached input is automatic (no cache_control needed) and billed at
+# 10% of the base input rate; this model generation has no separate
+# cache-write charge (that's a GPT-5.6+ change).
+GPT_5_MINI_PRICES = {
+    "input": 0.25,
+    "output": 2.00,
+    "cache_write": 0.0,
+    "cache_read": 0.025,
+}
+
+# Groq-hosted Llama 3.3 70B Versatile, official pricing as of 2026-09-04
+# (console.groq.com/docs/pricing). Groq does not do Anthropic/OpenAI-style
+# automatic prompt caching, so cache_write/cache_read are always 0 for this
+# model -- cost_usd and cost_usd_no_cache collapse to the same number, which
+# is itself a real finding (no caching available means no inversion effect
+# is even possible on this leg).
+GROQ_LLAMA_70B_PRICES = {
+    "input": 0.59,
+    "output": 0.79,
+    "cache_write": 0.0,
+    "cache_read": 0.0,
+}
+
+# EpisodeResult.model (= the adapter's `name` field) -> its price table, so a
+# report reading a multi-model results file can cost each row correctly
+# instead of assuming every row is Sonnet.
+PRICES_BY_MODEL = {
+    "anthropic": SONNET_5_PRICES,
+    "openai-gpt-5-mini": GPT_5_MINI_PRICES,
+    "groq-llama-3.3-70b": GROQ_LLAMA_70B_PRICES,
+}
+
 
 def cost_usd(usage: dict[str, int], prices: dict[str, float] = SONNET_5_PRICES) -> float:
     """Actual dollar cost of a usage dict, cache pricing as billed."""

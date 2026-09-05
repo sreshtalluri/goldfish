@@ -10,7 +10,7 @@ import sys
 from collections import defaultdict
 
 from goldfish import strategies
-from goldfish.metrics import cost_usd, cost_usd_no_cache, half_life, recall_by_generation, wilson_ci
+from goldfish.metrics import PRICES_BY_MODEL, SONNET_5_PRICES, cost_usd, cost_usd_no_cache, half_life, recall_by_generation, wilson_ci
 
 # Strategies whose "generation" means what PRD section 6 means by it: a
 # discrete recompaction event, so generation N+1 is built from generation N's
@@ -32,7 +32,7 @@ def load(path: str) -> list[dict]:
         return [json.loads(line) for line in f]
 
 
-def valid_points(rows: list[dict], strategy: str, cls: str) -> list[tuple[int, bool]]:
+def valid_points(rows: list[dict], model: str, strategy: str, cls: str) -> list[tuple[int, bool]]:
     """(distance, recalled) pairs for probes that were both planted and
     asked, with asked after planted. See probes.Probe.distance for why
     negative/never-planted cases are excluded rather than clamped.
@@ -46,21 +46,26 @@ def valid_points(rows: list[dict], strategy: str, cls: str) -> list[tuple[int, b
     return [
         (p["distance"], p["outcome"] == "recalled")
         for r in rows
-        if r["strategy"] == strategy
+        if r["strategy"] == strategy and r["model"] == model
         for p in r["probes"]
         if p["class"] == cls and p["distance"] is not None and p["distance"] >= 0
     ]
 
 
 def report(rows: list[dict]) -> None:
-    order = [s for s in strategies.REGISTRY if any(r["strategy"] == s for r in rows)]
+    # (model, strategy) rather than strategy alone: a single results file can
+    # now hold more than one model (see results_multimodel.jsonl), and
+    # pooling rows across models into one "strategy" bucket would silently
+    # average away the exact cross-model comparison this report exists to make.
+    order = sorted({(r["model"], r["strategy"]) for r in rows}, key=lambda ms: (ms[0], list(strategies.REGISTRY).index(ms[1])))
+    models_present = len({m for m, _ in order})
     print(f"total episodes: {len(rows)}\n")
 
-    print("=== recall-by-distance curve, per strategy x class (pooled over seeds) ===")
-    for s in order:
-        print(f"\n{s}:")
+    print("=== recall-by-distance curve, per model x strategy x class (pooled over seeds) ===")
+    for m, s in order:
+        print(f"\n{m} / {s}:")
         for c in CLASSES:
-            points = valid_points(rows, s, c)
+            points = valid_points(rows, m, s, c)
             if not points:
                 print(f"  {c:<20} no valid samples (never discovered, or only asked before planted)")
                 continue
@@ -70,12 +75,14 @@ def report(rows: list[dict]) -> None:
             curve = "  ".join(f"d={d}:{sum(v)}/{len(v)}" for d, v in sorted(by_dist.items()))
             print(f"  {c:<20} {curve}")
 
-    print("\n=== context half life (turns to 50% recall), per strategy x class ===")
-    print(f"{'strategy':<16}" + "".join(f"{c[:14]:>16}" for c in CLASSES))
-    for s in order:
+    print("\n=== context half life (turns to 50% recall), per model x strategy x class ===")
+    label_width = 16 + (10 if models_present > 1 else 0)
+    print(f"{'model / strategy':<{label_width}}" + "".join(f"{c[:14]:>16}" for c in CLASSES))
+    for m, s in order:
+        label = f"{m}/{s}" if models_present > 1 else s
         cells = []
         for c in CLASSES:
-            points = valid_points(rows, s, c)
+            points = valid_points(rows, m, s, c)
             if not points:
                 cells.append("no data")
                 continue
@@ -88,45 +95,49 @@ def report(rows: list[dict]) -> None:
                 cells.append(f"<{hl.turns:.0f}")
             else:
                 cells.append(f"{hl.turns:.1f}")
-        print(f"{s:<16}" + "".join(f"{c:>16}" for c in cells))
+        print(f"{label:<{label_width}}" + "".join(f"{c:>16}" for c in cells))
 
     print("\n=== overall recall with 95% Wilson CI ===")
-    for s in order:
-        rs = [r for r in rows if r["strategy"] == s]
+    for m, s in order:
+        rs = [r for r in rows if r["strategy"] == s and r["model"] == m]
         outs = [p["outcome"] == "recalled" for r in rs for p in r["probes"]]
         k, n = sum(outs), len(outs)
         lo, hi = wilson_ci(k, n)
-        print(f"{s:<16} {k}/{n} = {k/n:.2f}  95% CI [{lo:.2f}, {hi:.2f}]")
+        label = f"{m}/{s}" if models_present > 1 else s
+        print(f"{label:<{label_width}} {k}/{n} = {k/n:.2f}  95% CI [{lo:.2f}, {hi:.2f}]")
 
     print("\n=== cache-aware cost: actual vs no-cache counterfactual ===")
-    print(f"{'strategy':<16}{'actual $':>12}{'no-cache $':>12}{'ratio':>8}{'$/episode':>12}")
-    for s in order:
-        rs = [r for r in rows if r["strategy"] == s]
-        actual = sum(cost_usd(r["usage"]) for r in rs)
-        no_cache = sum(cost_usd_no_cache(r["usage"]) for r in rs)
-        print(f"{s:<16}{actual:>12.4f}{no_cache:>12.4f}{no_cache / actual:>8.2f}{actual / len(rs):>12.4f}")
+    print(f"{'model / strategy':<{label_width}}{'actual $':>12}{'no-cache $':>12}{'ratio':>8}{'$/episode':>12}")
+    for m, s in order:
+        rs = [r for r in rows if r["strategy"] == s and r["model"] == m]
+        prices = PRICES_BY_MODEL.get(m, SONNET_5_PRICES)
+        actual = sum(cost_usd(r["usage"], prices) for r in rs)
+        no_cache = sum(cost_usd_no_cache(r["usage"], prices) for r in rs)
+        label = f"{m}/{s}" if models_present > 1 else s
+        ratio = no_cache / actual if actual else float("nan")
+        print(f"{label:<{label_width}}{actual:>12.4f}{no_cache:>12.4f}{ratio:>8.2f}{actual / len(rs):>12.4f}")
 
-    total_actual = sum(cost_usd(r["usage"]) for r in rows)
-    total_no_cache = sum(cost_usd_no_cache(r["usage"]) for r in rows)
+    total_actual = sum(cost_usd(r["usage"], PRICES_BY_MODEL.get(r["model"], SONNET_5_PRICES)) for r in rows)
+    total_no_cache = sum(cost_usd_no_cache(r["usage"], PRICES_BY_MODEL.get(r["model"], SONNET_5_PRICES)) for r in rows)
     print(f"\ntotal actual cost: ${total_actual:.2f}")
     print(f"total no-cache counterfactual: ${total_no_cache:.2f}")
 
 
 def generation_report(rows: list[dict]) -> None:
-    order = [s for s in strategies.REGISTRY if any(r["strategy"] == s for r in rows)]
+    order = sorted({(r["model"], r["strategy"]) for r in rows}, key=lambda ms: (ms[0], list(strategies.REGISTRY).index(ms[1])))
     print("=== recall by compaction generation ===")
     print("(recompacting strategies only: generation is a discrete re-summarization")
     print(" count, comparable turn to turn. Others increment on every real eviction,")
     print(" which under a tight budget fires almost every turn -- see comment in")
     print(" report_m2.py. Reported for completeness, not as a compounding curve.)\n")
-    for s in order:
+    for m, s in order:
         if s in RECOMPACTING_STRATEGIES:
             label = " (recompacting)"
         elif s == "full_history":
             label = " (never evicts)"
         else:
             label = " (near-continuous, see caveat)"
-        rs = [r for r in rows if r["strategy"] == s]
+        rs = [r for r in rows if r["strategy"] == s and r["model"] == m]
         points = [
             (p["generation_at_ask"], p["outcome"] == "recalled")
             for r in rs
@@ -135,7 +146,7 @@ def generation_report(rows: list[dict]) -> None:
         ]
         buckets = recall_by_generation(points)
         curve = "  ".join(f"g{g}:{k}/{n}" for g, (k, n) in buckets.items())
-        print(f"{s}{label}:\n  {curve}\n")
+        print(f"{m}/{s}{label}:\n  {curve}\n")
 
 
 if __name__ == "__main__":

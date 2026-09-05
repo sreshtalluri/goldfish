@@ -250,3 +250,92 @@ class AnthropicAdapter:
                 return Action("tool", name=block.name, args=dict(block.input), usage=usage)
         text = "".join(b.text for b in resp.content if b.type == "text")
         return Action("text", content=text, usage=usage)
+
+
+def _parse_openai_response(resp: Any) -> Action:
+    """Split out from act() so the tool-call-vs-text branching can be unit
+    tested against a plain object (see test_models.py) without a real key or
+    network call, the same way every other non-trivial branch in this
+    project gets an offline check.
+    """
+    usage = {
+        "input": resp.usage.prompt_tokens,
+        "output": resp.usage.completion_tokens,
+        "cache_read": getattr(getattr(resp.usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0,
+        "cache_write": 0,  # OpenAI-compatible caching is automatic, no separate write charge on this model tier
+    }
+    message = resp.choices[0].message
+    if getattr(message, "tool_calls", None):
+        call = message.tool_calls[0]
+        return Action("tool", name=call.function.name, args=json.loads(call.function.arguments), usage=usage)
+    return Action("text", content=message.content or "", usage=usage)
+
+
+@dataclass
+class OpenAICompatibleAdapter:
+    """Real runs against OpenAI or any OpenAI-compatible endpoint (Groq,
+    Together, Fireworks, a local vLLM/Ollama server). One class instead of
+    two: the wire format is the same, only base_url/model/api_key differ, so
+    the PRD's "one OpenAI, one open weight" requirement (section 7) is
+    satisfied by pointing two instances of this class at different
+    base_urls rather than duplicating the request-building logic.
+
+    token_param/reasoning_effort exist because GPT-5-family reasoning
+    models are a real wire-format difference, not a simplification to paper
+    over: they reject `max_tokens` (must be `max_completion_tokens`, which
+    also pays for hidden reasoning tokens, not just the visible answer) and
+    accept `reasoning_effort`, while plain chat models like Groq's
+    Llama do not. Every field defaults to the plain-chat-model shape.
+    """
+
+    model: str
+    name: str
+    base_url: str | None = None  # None = OpenAI's default endpoint
+    api_key_env: str = "OPENAI_API_KEY"
+    max_tokens: int = 1024
+    token_param: str = "max_tokens"  # "max_completion_tokens" for GPT-5-family reasoning models
+    reasoning_effort: str | None = None
+    max_retries: int = 6
+    _client: Any = field(default=None, init=False, repr=False, compare=False)
+
+    def _get_client(self):
+        import openai  # imported lazily so the offline path has no dependency
+
+        if self._client is None:
+            self._client = openai.OpenAI(
+                api_key=os.environ[self.api_key_env],
+                base_url=self.base_url,
+                max_retries=self.max_retries,
+            )
+        return self._client
+
+    def act(self, system: str, messages: list[Message], tools: list[dict]) -> Action:
+        client = self._get_client()
+        # Unlike Anthropic's separate `system` parameter, OpenAI's Chat
+        # Completions API takes the system prompt as the first message in
+        # the same list -- a real wire-format difference, not a simplification.
+        chat_messages = [{"role": "system", "content": system}]
+        chat_messages.extend(
+            {"role": m.get("role", "user"), "content": str(m.get("content", ""))} for m in messages
+        )
+        kwargs: dict[str, Any] = {"model": self.model, "messages": chat_messages, self.token_param: self.max_tokens}
+        if self.reasoning_effort:
+            kwargs["reasoning_effort"] = self.reasoning_effort
+        if tools:
+            kwargs["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t["doc"],
+                        "parameters": {
+                            "type": "object",
+                            "properties": {a: {"type": typ} for a, typ in t["args"].items()},
+                            "required": list(t["args"]),
+                        },
+                    },
+                }
+                for t in tools
+            ]
+        resp = client.chat.completions.create(**kwargs)
+        return _parse_openai_response(resp)
