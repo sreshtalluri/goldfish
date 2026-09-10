@@ -145,30 +145,49 @@ generation tables (with this caveat) via
 `python3 report_m2.py results_generation_study.jsonl`.
 
 **Multi-model coverage (PRD section 7: one Anthropic, one OpenAI, one open
-weight).** Built and blocked only on an API key, not on any remaining code.
-`OpenAICompatibleAdapter` (`goldfish/models.py`) speaks the OpenAI Chat
-Completions wire format, so it's pointed at OpenRouter
+weight), run.** `OpenAICompatibleAdapter` (`goldfish/models.py`) speaks the
+OpenAI Chat Completions wire format, pointed at OpenRouter
 (`openrouter.ai/api/v1`) rather than OpenAI and Groq directly: one
 OpenAI-compatible aggregator, one key, both the OpenAI and open-weight legs
 of PRD section 7 (`openai/gpt-5-mini` and `meta-llama/llama-3.3-70b-instruct`,
 picked by model slug, not by base_url). Deliberately scoped as a coverage
-check rather than a full replication of the Anthropic matrix: full
-6-strategy x 3-battery x 3-seed x 3-model replication would cost roughly
-3x the M2 run (~$45-50) to answer a question this project doesn't need to
-claim ("do the curves match in every detail"). Instead, `sweep_multimodel.py`
-runs the 3 strategies with the clearest M2 findings (`full_history` control,
-`summarization`, `sliding_window`) x 2 seeds x 1 battery (budget=700) against
-both models, to check the cheaper, still-real question: does the ranking on
-the two headline findings (cache inversion, per-class half life) hold up on
-a second and third model family. `report_m2.py` now groups by
-(model, strategy) so a file mixing models reports each correctly, including
-per-model pricing pulled live from OpenRouter's own pricing API
-(`goldfish/metrics.py` `PRICES_BY_MODEL`).
+check, not a full replication of the Anthropic matrix (which would cost
+roughly 3x the M2 run, ~$45-50, to answer a question this project doesn't
+need to claim): 3 strategies with the clearest M2 findings (`full_history`
+control, `summarization`, `sliding_window`) x 2 seeds x 1 battery
+(budget=700) x 2 models, 12 episodes, `results_multimodel.jsonl`. Total
+actual cost: $0.29. Reproduce with `python3 report_m2.py
+results_multimodel.jsonl` (full output in `m3_multimodel_report.txt`).
 
-To run: add `OPENROUTER_API_KEY` to `.env`, then
+**What replicated, what didn't (n=12 probes per model x strategy cell — read
+directionally, this is a coverage check, not a second full study):**
+- **Recall ranking direction holds.** On both new models, `full_history`
+  recalls best or ties for best, and `summarization` is worst or tied for
+  worst (gpt-5-mini: 0.58 / 0.33 / 0.33 for full_history / sliding_window /
+  summarization; llama-3.3-70b: 0.83 / 0.83 / 0.67) — the same shape as the
+  54-episode Anthropic result, though with wide, overlapping Wilson CIs at
+  this n.
+- **The cache-inversion finding does not replicate.** On Anthropic,
+  `full_history` was the *cheapest* strategy per episode because
+  compaction broke the cache prefix. Here, `full_history` is the *most*
+  expensive strategy per episode on both new models (gpt-5-mini: $0.041 vs
+  $0.035/$0.036; llama-3.3-70b: $0.016 vs $0.010/$0.007) — caching still
+  measurably helps (ratios of 1.0-1.3x vs an uncached counterfactual) but
+  not enough to overcome full_history's larger raw token volume the way
+  Claude's cache economics did. Read as a real, specific finding about
+  Claude's prompt-caching pricing/mechanics, not a universal law of context
+  compaction — exactly the kind of claim a single-model study couldn't have
+  caught, and the reason PRD section 7 asked for this leg at all.
+- Llama's `artifact_state` half life (`<22`-`<26`) and gpt-5-mini's
+  `negative_knowledge`/`identifier`/`artifact_state` half lives (mostly
+  left-censored, `<10`-`<25`) are consistent with the Anthropic finding that
+  `artifact_state` dies fastest — though at n=12 several classes are too
+  thin to distinguish from noise.
+
+To reproduce or extend: add `OPENROUTER_API_KEY` to `.env`, then
 
 ```bash
-python3 sweep_multimodel.py            # smoke-test the first line, then let it finish (~12 episodes)
+python3 sweep_multimodel.py            # resumable; skips (model, strategy, seed) triples already in the file
 python3 report_m2.py results_multimodel.jsonl
 ```
 
