@@ -41,10 +41,11 @@ SONNET_5_PRICES = {
     "cache_read": 0.20,
 }  # USD per million tokens
 
-# gpt-5-mini, official pricing as of 2026-09-04 (platform.openai.com pricing
-# docs). Cached input is automatic (no cache_control needed) and billed at
-# 10% of the base input rate; this model generation has no separate
-# cache-write charge (that's a GPT-5.6+ change).
+# openai/gpt-5-mini via OpenRouter, live pricing pulled from
+# https://openrouter.ai/api/v1/models on 2026-09-10 (not a blog estimate --
+# that endpoint returns the actual current per-token rate OpenRouter bills).
+# Cached input is automatic and billed at 10% of the base input rate; no
+# separate cache-write charge.
 GPT_5_MINI_PRICES = {
     "input": 0.25,
     "output": 2.00,
@@ -52,15 +53,16 @@ GPT_5_MINI_PRICES = {
     "cache_read": 0.025,
 }
 
-# Groq-hosted Llama 3.3 70B Versatile, official pricing as of 2026-09-04
-# (console.groq.com/docs/pricing). Groq does not do Anthropic/OpenAI-style
-# automatic prompt caching, so cache_write/cache_read are always 0 for this
-# model -- cost_usd and cost_usd_no_cache collapse to the same number, which
-# is itself a real finding (no caching available means no inversion effect
-# is even possible on this leg).
-GROQ_LLAMA_70B_PRICES = {
-    "input": 0.59,
-    "output": 0.79,
+# meta-llama/llama-3.3-70b-instruct via OpenRouter, same source/date as
+# above. OpenRouter auto-routes to the cheapest qualifying host for an
+# open-weight model, which is why this is cheaper than Groq's own direct
+# listed rate for the same model. No cache pricing field on this model, so
+# cache_write/cache_read are always 0 -- cost_usd and cost_usd_no_cache
+# collapse to the same number, itself a real finding (no caching available
+# means no inversion effect is even possible on this leg).
+LLAMA_70B_PRICES = {
+    "input": 0.10,
+    "output": 0.32,
     "cache_write": 0.0,
     "cache_read": 0.0,
 }
@@ -70,8 +72,8 @@ GROQ_LLAMA_70B_PRICES = {
 # instead of assuming every row is Sonnet.
 PRICES_BY_MODEL = {
     "anthropic": SONNET_5_PRICES,
-    "openai-gpt-5-mini": GPT_5_MINI_PRICES,
-    "groq-llama-3.3-70b": GROQ_LLAMA_70B_PRICES,
+    "openrouter-gpt-5-mini": GPT_5_MINI_PRICES,
+    "openrouter-llama-3.3-70b": LLAMA_70B_PRICES,
 }
 
 

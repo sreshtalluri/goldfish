@@ -10,11 +10,16 @@ hold up on a second and third model family. 3 representative strategies
 models = 12 episodes, written to results_multimodel.jsonl (kept separate from
 the Anthropic-only files so nothing silently mixes budgets or batteries).
 
-Requires OPENAI_API_KEY and GROQ_API_KEY in .env. Run a single episode first
-(Ctrl-C after the first printed line) as a smoke test before letting this run
-to completion -- same discipline as every other real-model run in this
-project: real API integration has surfaced a bug on the first live call every
-single time so far.
+Requires OPENROUTER_API_KEY in .env. OpenRouter is itself an OpenAI-compatible
+endpoint (openrouter.ai/api/v1) that fronts every provider's models behind
+one key, so it satisfies "one OpenAI, one open weight" (PRD section 7) with a
+single account instead of two -- same OpenAICompatibleAdapter, just pointed
+at OpenRouter with different `model` slugs ("author/slug" form) instead of
+two different base_urls. Run a single episode first (Ctrl-C after the first
+printed line) as a smoke test before letting this run to completion -- same
+discipline as every other real-model run in this project: real API
+integration has surfaced a bug on the first live call every single time so
+far.
 """
 import json
 import sys
@@ -31,19 +36,23 @@ SEEDS = [0, 1]
 BUDGET = 700
 OUT = "results_multimodel.jsonl"
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
 MODELS = {
-    "openai-gpt-5-mini": lambda: OpenAICompatibleAdapter(
-        model="gpt-5-mini",
-        name="openai-gpt-5-mini",
+    "openrouter-gpt-5-mini": lambda: OpenAICompatibleAdapter(
+        model="openai/gpt-5-mini",
+        name="openrouter-gpt-5-mini",
+        base_url=OPENROUTER_BASE_URL,
+        api_key_env="OPENROUTER_API_KEY",
         token_param="max_completion_tokens",
         max_tokens=2048,  # higher than the Anthropic default: this budget also pays for hidden reasoning tokens
         reasoning_effort="low",  # this task needs tool-call discipline, not deep reasoning -- keep it cheap
     ),
-    "groq-llama-3.3-70b": lambda: OpenAICompatibleAdapter(
-        model="llama-3.3-70b-versatile",
-        name="groq-llama-3.3-70b",
-        base_url="https://api.groq.com/openai/v1",
-        api_key_env="GROQ_API_KEY",
+    "openrouter-llama-3.3-70b": lambda: OpenAICompatibleAdapter(
+        model="meta-llama/llama-3.3-70b-instruct",
+        name="openrouter-llama-3.3-70b",
+        base_url=OPENROUTER_BASE_URL,
+        api_key_env="OPENROUTER_API_KEY",
     ),
 }
 
