@@ -6,6 +6,16 @@ A benchmark for context compaction strategies. Not a memory system, not a
 conversational recall benchmark. It measures **which class of information each
 compaction strategy destroys, and how fast**.
 
+Full writeup: [WRITEUP.md](WRITEUP.md). The two headline findings, in one line
+each: some kinds of agent memory die in under 9 turns no matter what you do,
+and "compact to save money" only holds for Claude — on two other model
+families tested, it's backwards.
+
+<p align="center">
+  <img src="plots/half_life_by_class.png" width="420" alt="Context half life by fact class, full_history control">
+  <img src="plots/cost_by_model.png" width="420" alt="Cache inversion is Claude-specific">
+</p>
+
 ## The metric
 
 **Context half life**: turns until recall of a planted fact of class C, under
@@ -105,6 +115,8 @@ probes/strategy): full_history 0.85 [0.73, 0.92], scratchpad 0.70 [0.57,
 0.81], tool_masking 0.69 [0.55, 0.79], sliding_window 0.65 [0.51, 0.76],
 retrieval 0.63 [0.50, 0.75], summarization 0.54 [0.41, 0.66].
 
+<p align="center"><img src="plots/recall_by_strategy.png" width="500" alt="Recall by compaction strategy with 95% CI"></p>
+
 M3, in progress. Two pieces landed:
 
 **`structured_notes`** (PRD section 5 item 6, the one strategy actually still
@@ -197,6 +209,7 @@ python3 report_m2.py results_multimodel.jsonl
 python run_demo.py          # offline sweep, no API key needed
 python -m pytest             # instrument + metrics validity tests
 python report_m2.py results_full_matrix_real.jsonl   # half life / CI / cost report
+python plots.py              # regenerates the 3 PNGs in plots/ from the committed result files
 ```
 
 ## Adding a strategy
