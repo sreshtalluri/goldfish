@@ -1,0 +1,105 @@
+total episodes: 12
+
+=== recall-by-distance curve, per model x strategy x class (pooled over seeds) ===
+
+openrouter-gpt-5-mini / full_history:
+  identifier           d=10:1/1  d=11:0/1
+  constraint           d=17:1/2
+  negative_knowledge   d=19:2/2
+  goal                 d=29:2/2
+  artifact_state       d=27:1/1  d=28:0/1
+  provenance           d=35:0/1  d=36:0/1
+
+openrouter-gpt-5-mini / sliding_window:
+  identifier           d=10:1/1  d=11:1/1
+  constraint           d=17:1/2
+  negative_knowledge   d=16:0/1  d=19:0/1
+  goal                 d=29:1/2
+  artifact_state       d=25:0/1  d=28:0/1
+  provenance           d=35:0/1  d=36:0/1
+
+openrouter-gpt-5-mini / summarization:
+  identifier           d=10:0/1  d=11:1/1
+  constraint           d=17:1/2
+  negative_knowledge   d=15:0/1  d=19:0/1
+  goal                 d=29:1/2
+  artifact_state       d=24:0/1  d=28:0/1
+  provenance           d=35:1/1  d=36:0/1
+
+openrouter-llama-3.3-70b / full_history:
+  identifier           d=9:1/1  d=11:1/1
+  constraint           d=17:1/1  d=18:1/1
+  negative_knowledge   d=17:1/1  d=20:1/1
+  goal                 d=29:2/2
+  artifact_state       d=26:0/1  d=29:0/1
+  provenance           d=34:1/1  d=36:1/1
+
+openrouter-llama-3.3-70b / sliding_window:
+  identifier           d=11:2/2
+  constraint           d=18:2/2
+  negative_knowledge   d=17:1/1  d=19:1/1
+  goal                 d=29:2/2
+  artifact_state       d=22:0/1  d=24:0/1
+  provenance           d=36:2/2
+
+openrouter-llama-3.3-70b / summarization:
+  identifier           d=11:2/2
+  constraint           d=18:1/2
+  negative_knowledge   d=19:0/1  d=20:1/1
+  goal                 d=29:1/2
+  artifact_state       d=26:0/1  d=28:1/1
+  provenance           d=36:2/2
+
+=== context half life (turns to 50% recall), per model x strategy x class ===
+model / strategy                identifier      constraint  negative_knowl            goal  artifact_state      provenance
+openrouter-gpt-5-mini/full_history            10.5             >17             >19             >29            27.5             <35
+openrouter-gpt-5-mini/sliding_window             >11             >17             <16             >29             <25             <35
+openrouter-gpt-5-mini/summarization             <10             >17             <15             >29             <24            35.5
+openrouter-llama-3.3-70b/full_history             >11             >18             >20             >29             <26             >36
+openrouter-llama-3.3-70b/sliding_window             >11             >18             >19             >29             <22             >36
+openrouter-llama-3.3-70b/summarization             >11             >18             <19             >29             <26             >36
+
+=== overall recall with 95% Wilson CI ===
+openrouter-gpt-5-mini/full_history 7/12 = 0.58  95% CI [0.32, 0.81]
+openrouter-gpt-5-mini/sliding_window 4/12 = 0.33  95% CI [0.14, 0.61]
+openrouter-gpt-5-mini/summarization 4/12 = 0.33  95% CI [0.14, 0.61]
+openrouter-llama-3.3-70b/full_history 10/12 = 0.83  95% CI [0.55, 0.95]
+openrouter-llama-3.3-70b/sliding_window 10/12 = 0.83  95% CI [0.55, 0.95]
+openrouter-llama-3.3-70b/summarization 8/12 = 0.67  95% CI [0.39, 0.86]
+
+=== cache-aware cost: actual vs no-cache counterfactual ===
+model / strategy              actual $  no-cache $   ratio   $/episode
+openrouter-gpt-5-mini/full_history      0.0817      0.1098    1.34      0.0409
+openrouter-gpt-5-mini/sliding_window      0.0689      0.0757    1.10      0.0345
+openrouter-gpt-5-mini/summarization      0.0723      0.0815    1.13      0.0362
+openrouter-llama-3.3-70b/full_history      0.0309      0.0353    1.14      0.0155
+openrouter-llama-3.3-70b/sliding_window      0.0202      0.0206    1.02      0.0101
+openrouter-llama-3.3-70b/summarization      0.0141      0.0141    1.00      0.0070
+
+total actual cost: $0.29
+total no-cache counterfactual: $0.34
+
+=== recall by compaction generation ===
+(recompacting strategies only: generation is a discrete re-summarization
+ count, comparable turn to turn. Others increment on every real eviction,
+ which under a tight budget fires almost every turn -- see comment in
+ report_m2.py. Reported for completeness, not as a compounding curve.)
+
+openrouter-gpt-5-mini/full_history (never evicts):
+  g0:7/12
+
+openrouter-gpt-5-mini/sliding_window (near-continuous, see caveat):
+  g1:1/1  g2:1/1  g4:0/1  g5:1/1  g9:0/1  g10:0/1  g14:1/3  g19:0/2  g20:0/1
+
+openrouter-gpt-5-mini/summarization (recompacting):
+  g1:1/1  g2:1/5  g3:1/1  g4:1/5
+
+openrouter-llama-3.3-70b/full_history (never evicts):
+  g0:10/12
+
+openrouter-llama-3.3-70b/sliding_window (near-continuous, see caveat):
+  g0:5/5  g3:3/3  g5:0/1  g7:0/1  g8:1/1  g12:1/1
+
+openrouter-llama-3.3-70b/summarization (recompacting):
+  g0:2/2  g1:2/2  g2:2/5  g3:1/2  g4:1/1
+
